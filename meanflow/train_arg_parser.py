@@ -45,6 +45,13 @@ def get_args_parser():
     parser.set_defaults(pin_mem=True)
     parser.add_argument("--log_per_step", default=100, type=int, metavar="N", help="Log training stats every N iterations",)
 
+    # wandb logging parameters
+    parser.add_argument("--use_wandb", action="store_true", help="Enable wandb logging.")
+    parser.add_argument("--wandb_key", default="", type=str, help="wandb API key.")
+    parser.add_argument("--wandb_entity", default="", type=str, help="wandb entity (username or team).")
+    parser.add_argument("--wandb_project", default="meanflow", type=str, help="wandb project name.")
+    parser.add_argument("--wandb_run_name", default="", type=str, help="wandb run name. Auto-generated as 'meanflow_<dataset>_b<batch_size>' if empty.")
+
     # Distributed training parameters
     parser.add_argument("--world_size", default=1, type=int, help="number of distributed processes")
     parser.add_argument("--local_rank", default=-1, type=int)

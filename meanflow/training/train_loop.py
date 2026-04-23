@@ -16,6 +16,7 @@ from torchmetrics.aggregation import MeanMetric
 import torch.distributed as dist
 from models.augment import AugmentPipe
 import models.rng as rng
+import wandb_utils
 
 
 logger = logging.getLogger(__name__)
@@ -155,5 +156,7 @@ def train_one_epoch(
             if log_writer is not None:
                 for k, v in metrics.items():
                     log_writer.add_scalar(f"ep_{k}", v, epoch_1000x)  # we use epoch * 1000 to plot, for calibrating different batch sizes
+            if args.use_wandb:
+                wandb_utils.log(metrics, step=steps)
 
     return

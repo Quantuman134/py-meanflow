@@ -1,20 +1,30 @@
-torchrun --standalone --nproc_per_node=8 --master_port=12345 \
-    train.py \
-    --output_dir=./tmp \
-    --dataset=cifar10 \
-    --batch_size=128 \
-    --lr=0.0006 \
-    --eval_frequency=50 \
-    --epochs=16000 \
-    --compute_fid \
-    --log_per_step=100 \
-    --tr_sampler=v1 \
-    --P_mean_t -0.6 \
-    --P_std_t 1.6 \
-    --P_mean_r -4.0 \
-    --P_std_r 1.6 \
-    --warmup_epochs 200 \
-    --norm_p 0.75 \
-    --ratio 0.75 \
-    --dropout 0.2 \
-    --use_edm_aug
+#!/bin/bash
+set -e
+
+NGPU=8
+PORT=12345
+CONFIG="../configs/cifar10_v1.yaml"
+
+TRAIN_ARGS=$(python3 - "$CONFIG" <<'PYEOF'
+import sys, yaml
+
+with open(sys.argv[1]) as f:
+    cfg = yaml.safe_load(f)
+
+args = []
+for key, val in cfg.items():
+    if isinstance(val, bool):
+        if val:
+            args.append(f"--{key}")
+    elif isinstance(val, list):
+        args.append(f"--{key}")
+        args.extend(str(v) for v in val)
+    else:
+        args += [f"--{key}", str(val)]
+
+print(" ".join(args))
+PYEOF
+)
+
+cd "$(dirname "$0")/.."
+eval "torchrun --standalone --nproc_per_node=$NGPU --master_port=$PORT train.py $TRAIN_ARGS"

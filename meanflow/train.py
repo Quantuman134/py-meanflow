@@ -30,6 +30,7 @@ from torchmetrics.aggregation import MeanMetric
 import models.rng as rng
 
 from torch.utils.tensorboard import SummaryWriter
+import wandb_utils
 
 torch.set_float32_matmul_precision('high')
 
@@ -112,6 +113,10 @@ def main(args):
         os.makedirs(args.output_dir, exist_ok=True)
         log_writer = SummaryWriter(log_dir=args.output_dir)
         logger.info(f"Tensorboard writer created at {args.output_dir}")
+        if args.use_wandb:
+            run_name = args.wandb_run_name or f"meanflow_{args.dataset}_b{args.batch_size}"
+            wandb_utils.initialize(args, args.wandb_entity, args.wandb_project, run_name, args.wandb_key or None)
+            logger.info(f"wandb run initialized: {run_name}")
     else:
         log_writer = None
         logger.info('Writer not created.')
@@ -229,6 +234,8 @@ def main(args):
             if log_writer is not None and "fid" in eval_stats:
                 logging.info(f"Eval {epoch + 1} epochs finished: FID_ema{ema_decay}: {eval_stats['fid']}")
                 log_writer.add_scalar(f"FID_ema{ema_decay}", eval_stats["fid"], epoch + 1)
+                if args.use_wandb:
+                    wandb_utils.log({f"FID_ema{ema_decay}": eval_stats["fid"]}, step=epoch + 1)
 
             # Eval extra ema model:
             for i in range(len(model_without_ddp.ema_decays)):
@@ -238,6 +245,8 @@ def main(args):
                 if log_writer is not None and "fid" in eval_stats:
                     logging.info(f"Eval {epoch + 1} epochs finished: FID_ema{ema_decay}: {eval_stats['fid']}")
                     log_writer.add_scalar(f"FID_ema{ema_decay}", eval_stats["fid"], epoch + 1)
+                    if args.use_wandb:
+                        wandb_utils.log({f"FID_ema{ema_decay}": eval_stats["fid"]}, step=epoch + 1)
 
             # Eval no-ema model:
             net_eval = model_without_ddp.net
@@ -245,6 +254,8 @@ def main(args):
             if log_writer is not None and "fid" in eval_stats:
                 logging.info(f"Eval {epoch + 1} epochs finished: FID w/o ema: {eval_stats['fid']}")
                 log_writer.add_scalar("FID", eval_stats["fid"], epoch + 1)
+                if args.use_wandb:
+                    wandb_utils.log({"FID": eval_stats["fid"]}, step=epoch + 1)
 
         if args.test_run or args.eval_only:
             break
