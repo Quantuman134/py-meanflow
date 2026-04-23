@@ -18,23 +18,25 @@ def save_on_master(*args, **kwargs):
 
 def save_model(
     args, epoch, model_without_ddp, optimizer, lr_schedule,
+    checkpoint_dir=None, step=None,
 ):
-    output_dir = Path(args.output_dir)
-    epoch_name = str(epoch)
-
-    checkpoint_paths = [output_dir / "checkpoint-last.pth",]
-    if (epoch + 1) % 1000 == 0:  # hack to save disk
-        checkpoint_paths.append(output_dir / ("checkpoint-%s.pth" % epoch_name))
-    for checkpoint_path in checkpoint_paths:
-        to_save = {
-            "model": model_without_ddp.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "lr_schedule": lr_schedule.state_dict(),
-            "epoch": epoch,
-            "args": args,
-        }
-
-        save_on_master(to_save, checkpoint_path)
+    ckpt_dir = Path(checkpoint_dir) if checkpoint_dir is not None else Path(args.output_dir)
+    to_save = {
+        "model": model_without_ddp.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "lr_schedule": lr_schedule.state_dict(),
+        "epoch": epoch,
+        "step": step,
+        "args": args,
+    }
+    save_on_master(to_save, ckpt_dir / "checkpoint-last.pth")
+    if step is not None:
+        ckpt_every = getattr(args, "ckpt_every", 0)
+        if ckpt_every > 0 and step % (10 * ckpt_every) == 0:
+            save_on_master(to_save, ckpt_dir / f"checkpoint-{step}.pth")
+    else:
+        if (epoch + 1) % 1000 == 0:
+            save_on_master(to_save, ckpt_dir / f"checkpoint-{epoch}.pth")
 
 
 def load_model(args, model_without_ddp, optimizer, lr_schedule):
@@ -55,5 +57,7 @@ def load_model(args, model_without_ddp, optimizer, lr_schedule):
             optimizer.load_state_dict(checkpoint["optimizer"])
             lr_schedule.load_state_dict(checkpoint["lr_schedule"])
             args.start_epoch = checkpoint["epoch"] + 1
+            if "step" in checkpoint and checkpoint["step"] is not None:
+                args.start_step = checkpoint["step"]
             logging.info(f"Start epoch set to {args.start_epoch}")
             logging.info("With optim & sched!")

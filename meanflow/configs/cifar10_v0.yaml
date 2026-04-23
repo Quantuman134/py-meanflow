@@ -29,3 +29,9 @@ loss_weighting: none   # weighting function name (see models/loss_weighting.py)
 use_scale: false       # apply weighting's built-in scale * extra_scale to the loss
 extra_scale: null      # extra multiplier on top of built-in scale; null means 1.0
 weight_lambda: 1.0    # lambda hyperparameter for vanilla_weighting / straight_weighting
+
+# step-based intervals
+ckpt_every: 0         # checkpoint every N steps (0 = epoch-based via eval_frequency)
+val_every: 0          # validation every N steps  (0 = epoch-based via eval_frequency)
+compute_is: false     # whether to compute Inception Score during eval
+is_splits: 10         # splits for IS estimation

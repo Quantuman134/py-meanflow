@@ -90,6 +90,45 @@ def get_data_loader(args, is_for_fid):
     return data_loader
 
 
+def _run_eval(model, model_without_ddp, data_loader_fid, device, epoch, step, args, log_writer, checkpoint_dir):
+    """Run FID (and optionally IS) evaluation for all EMA variants and the raw net."""
+    log_step = step if step is not None else epoch + 1
+
+    def _log_stats(eval_stats, tag_fid, tag_is):
+        if log_writer is None:
+            return
+        if "fid" in eval_stats:
+            logging.info(f"Eval step={log_step}: {tag_fid}={eval_stats['fid']:.4f}")
+            log_writer.add_scalar(tag_fid, eval_stats["fid"], log_step)
+            if args.use_wandb:
+                wandb_utils.log({tag_fid: eval_stats["fid"]}, step=log_step)
+        if "is_mean" in eval_stats:
+            logging.info(
+                f"Eval step={log_step}: {tag_is}={eval_stats['is_mean']:.2f}±{eval_stats['is_std']:.2f}"
+            )
+            log_writer.add_scalar(tag_is, eval_stats["is_mean"], log_step)
+            if args.use_wandb:
+                wandb_utils.log({tag_is: eval_stats["is_mean"]}, step=log_step)
+
+    net_eval = model_without_ddp.net_ema
+    ema_decay = net_eval.ema_decay
+    eval_stats = eval_model(model, net_eval, data_loader_fid, device, epoch=epoch, args=args,
+                            suffix=f"_ema{ema_decay}", checkpoint_dir=checkpoint_dir, step=step)
+    _log_stats(eval_stats, f"FID_ema{ema_decay}", f"IS_ema{ema_decay}")
+
+    for i in range(len(model_without_ddp.ema_decays)):
+        net_eval = model_without_ddp._modules[f"net_ema{i + 1}"]
+        ema_decay = net_eval.ema_decay
+        eval_stats = eval_model(model, net_eval, data_loader_fid, device, epoch=epoch, args=args,
+                                suffix=f"_ema{ema_decay}", checkpoint_dir=checkpoint_dir, step=step)
+        _log_stats(eval_stats, f"FID_ema{ema_decay}", f"IS_ema{ema_decay}")
+
+    net_eval = model_without_ddp.net
+    eval_stats = eval_model(model, net_eval, data_loader_fid, device, epoch=epoch, args=args,
+                            suffix="_noema", checkpoint_dir=checkpoint_dir, step=step)
+    _log_stats(eval_stats, "FID", "IS")
+
+
 def main(args):
     distributed_mode.init_distributed_mode(args)
 
@@ -108,16 +147,19 @@ def main(args):
 
     logger.info("job dir: {}".format(os.path.dirname(os.path.realpath(__file__))))
     logger.info("{}".format(args).replace(", ", ",\n"))
+
+    scale_tag = "_scale" if args.use_scale else ""
+    exp_name = args.wandb_run_name or f"meanflow_{args.dataset}_b{args.batch_size}_{args.loss_weighting}{scale_tag}"
+    checkpoint_dir = Path(args.output_dir) / exp_name
+
     if distributed_mode.is_main_process():
-        # create tensorboard
-        os.makedirs(args.output_dir, exist_ok=True)
-        log_writer = SummaryWriter(log_dir=args.output_dir)
-        logger.info(f"Tensorboard writer created at {args.output_dir}")
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        log_writer = SummaryWriter(log_dir=str(checkpoint_dir))
+        logger.info(f"Experiment: {exp_name}")
+        logger.info(f"Checkpoint dir: {checkpoint_dir}")
         if args.use_wandb:
-            scale_tag = "_scale" if args.use_scale else ""
-            run_name = args.wandb_run_name or f"meanflow_{args.dataset}_b{args.batch_size}_{args.loss_weighting}{scale_tag}"
-            wandb_utils.initialize(args, args.wandb_entity, args.wandb_project, run_name, args.wandb_key or None)
-            logger.info(f"wandb run initialized: {run_name}")
+            wandb_utils.initialize(args, args.wandb_entity, args.wandb_project, exp_name, args.wandb_key or None)
+            logger.info(f"wandb run initialized: {exp_name}")
     else:
         log_writer = None
         logger.info('Writer not created.')
@@ -194,11 +236,16 @@ def main(args):
 
     meters = {'batch_loss': batch_loss, 'batch_time': batch_time,}
 
+    steps_per_epoch = len(data_loader_train)
+    total_steps = getattr(args, "start_step", args.start_epoch * steps_per_epoch)
+
     logger.info(f"Start from {args.start_epoch} to {args.epochs} epochs")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
+
+        total_steps_before = total_steps
         if not args.eval_only:
             train_one_epoch(
                 model=model,
@@ -212,54 +259,42 @@ def main(args):
                 args=args,
                 meters=meters
             )
+        total_steps += steps_per_epoch
 
-        if args.output_dir and (
-            (args.eval_frequency > 0 and (epoch + 1) % args.eval_frequency == 0)
-            or args.eval_only
-            or args.test_run
-        ):
-            if not args.eval_only:
-                save_model(
-                    args=args,
-                    model_without_ddp=model_without_ddp,
-                    optimizer=optimizer,
-                    lr_schedule=lr_schedule,
-                    epoch=epoch,
-                )
-                logging.info(f"Saved checkpoint to {args.output_dir}")
-
-            # Eval ema model:
-            net_eval = model_without_ddp.net_ema
-            ema_decay = net_eval.ema_decay
-            eval_stats = eval_model(model, net_eval, data_loader_fid, device, epoch=epoch, args=args, suffix=f'_ema{ema_decay}')
-            if log_writer is not None and "fid" in eval_stats:
-                logging.info(f"Eval {epoch + 1} epochs finished: FID_ema{ema_decay}: {eval_stats['fid']}")
-                log_writer.add_scalar(f"FID_ema{ema_decay}", eval_stats["fid"], epoch + 1)
-                if args.use_wandb:
-                    wandb_utils.log({f"FID_ema{ema_decay}": eval_stats["fid"]}, step=epoch + 1)
-
-            # Eval extra ema model:
-            for i in range(len(model_without_ddp.ema_decays)):
-                net_eval = model_without_ddp._modules[f"net_ema{i + 1}"]
-                ema_decay = net_eval.ema_decay
-                eval_stats = eval_model(model, net_eval, data_loader_fid, device, epoch=epoch, args=args, suffix=f'_ema{ema_decay}')
-                if log_writer is not None and "fid" in eval_stats:
-                    logging.info(f"Eval {epoch + 1} epochs finished: FID_ema{ema_decay}: {eval_stats['fid']}")
-                    log_writer.add_scalar(f"FID_ema{ema_decay}", eval_stats["fid"], epoch + 1)
-                    if args.use_wandb:
-                        wandb_utils.log({f"FID_ema{ema_decay}": eval_stats["fid"]}, step=epoch + 1)
-
-            # Eval no-ema model:
-            net_eval = model_without_ddp.net
-            eval_stats = eval_model(model, net_eval, data_loader_fid, device, epoch=epoch, args=args, suffix='_noema')
-            if log_writer is not None and "fid" in eval_stats:
-                logging.info(f"Eval {epoch + 1} epochs finished: FID w/o ema: {eval_stats['fid']}")
-                log_writer.add_scalar("FID", eval_stats["fid"], epoch + 1)
-                if args.use_wandb:
-                    wandb_utils.log({"FID": eval_stats["fid"]}, step=epoch + 1)
-
+        # Always save and eval for test_run / eval_only, then exit
         if args.test_run or args.eval_only:
+            if not args.eval_only and args.output_dir:
+                save_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                           lr_schedule=lr_schedule, epoch=epoch,
+                           checkpoint_dir=checkpoint_dir, step=None)
+                logging.info(f"Saved checkpoint to {checkpoint_dir}")
+            _run_eval(model, model_without_ddp, data_loader_fid, device, epoch, None,
+                      args, log_writer, checkpoint_dir)
             break
+
+        # Step-based checkpoint (when ckpt_every > 0)
+        if args.ckpt_every > 0 and args.output_dir:
+            if (total_steps // args.ckpt_every) > (total_steps_before // args.ckpt_every):
+                save_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                           lr_schedule=lr_schedule, epoch=epoch,
+                           checkpoint_dir=checkpoint_dir, step=total_steps)
+                logging.info(f"Saved checkpoint at step {total_steps} to {checkpoint_dir}")
+
+        # Step-based validation (when val_every > 0)
+        if args.val_every > 0:
+            if (total_steps // args.val_every) > (total_steps_before // args.val_every):
+                _run_eval(model, model_without_ddp, data_loader_fid, device, epoch, total_steps,
+                          args, log_writer, checkpoint_dir)
+
+        # Epoch-based fallback (only when both step-based modes are disabled)
+        if args.ckpt_every == 0 and args.val_every == 0:
+            if args.eval_frequency > 0 and (epoch + 1) % args.eval_frequency == 0 and args.output_dir:
+                save_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                           lr_schedule=lr_schedule, epoch=epoch,
+                           checkpoint_dir=checkpoint_dir, step=None)
+                logging.info(f"Saved checkpoint at epoch {epoch + 1} to {checkpoint_dir}")
+                _run_eval(model, model_without_ddp, data_loader_fid, device, epoch, None,
+                          args, log_writer, checkpoint_dir)
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))

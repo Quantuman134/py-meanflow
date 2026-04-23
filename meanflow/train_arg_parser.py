@@ -83,6 +83,18 @@ def get_args_parser():
     parser.add_argument("--weight_lambda", default=1.0, type=float,
                         help="Lambda hyperparameter for vanilla_weighting and straight_weighting.")
 
+    # Step-based intervals
+    parser.add_argument("--ckpt_every", default=0, type=int,
+                        help="Save checkpoint every N training steps. 0 = use eval_frequency (epoch-based).")
+    parser.add_argument("--val_every", default=0, type=int,
+                        help="Run FID/IS evaluation every N training steps. 0 = use eval_frequency (epoch-based).")
+
+    # IS metric
+    parser.add_argument("--compute_is", action="store_true",
+                        help="Compute Inception Score during evaluation.")
+    parser.add_argument("--is_splits", default=10, type=int,
+                        help="Number of splits for IS mean/std estimation.")
+
     # Debugging settings
     parser.add_argument("--test_run", action="store_true", help="Only run one batch of training and evaluation.")
     parser.add_argument("--not_compile", action="store_false", dest="compile", default=True, help="Disable compilation.")

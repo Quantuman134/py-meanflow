@@ -33,6 +33,8 @@ def eval_model(
     epoch: int,
     args: Namespace,
     suffix: str = "",
+    checkpoint_dir: Path | None = None,
+    step: int | None = None,
 ):
     gc.collect()
     model.train(False)
@@ -49,8 +51,11 @@ def eval_model(
 
     num_synthetic = 0
     snapshots_saved = False
+    all_synthetic_for_is = []
+    snapshot_dir = (checkpoint_dir if checkpoint_dir is not None else Path(args.output_dir)) / "snapshots"
+    fid_samples_base = checkpoint_dir if checkpoint_dir is not None else Path(args.output_dir)
     if args.output_dir:
-        (Path(args.output_dir) / "snapshots").mkdir(parents=True, exist_ok=True)
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
 
     for data_iter_step, (samples, _) in enumerate(data_loader):
         samples = samples.to(device, non_blocking=True)
@@ -78,12 +83,15 @@ def eval_model(
                 synthetic_samples = synthetic_samples[: fid_samples - num_synthetic]
             fid_metric.update(synthetic_samples, real=False)
             num_synthetic += synthetic_samples.shape[0]
+
+            if args.compute_is:
+                all_synthetic_for_is.append(synthetic_samples.cpu())
+
             if not snapshots_saved and args.output_dir:
+                label = f"step{step}" if step is not None else str(epoch)
                 save_image(
                     synthetic_samples,
-                    fp=Path(args.output_dir)
-                    / "snapshots"
-                    / f"{epoch}_{data_iter_step}{suffix}.png",
+                    fp=snapshot_dir / f"{label}_{data_iter_step}{suffix}.png",
                 )
                 snapshots_saved = True
 
@@ -97,7 +105,7 @@ def eval_model(
                     .numpy()
                 )
                 for batch_index, image_np in enumerate(images_np):
-                    image_dir = Path(args.output_dir) / f"fid_samples{suffix}"
+                    image_dir = fid_samples_base / f"fid_samples{suffix}"
                     os.makedirs(image_dir, exist_ok=True)
                     image_path = (
                         image_dir
@@ -118,4 +126,18 @@ def eval_model(
             break
     
     metrics = {"fid": float(fid_metric.compute().detach().cpu())}
+
+    if args.compute_is and all_synthetic_for_is:
+        from training.is_metric import compute_is as compute_inception_score
+        all_syn = torch.cat(all_synthetic_for_is, dim=0)
+        n_splits = getattr(args, "is_splits", 10)
+        if len(all_syn) >= n_splits:
+            is_mean, is_std = compute_inception_score(all_syn, device=str(device), splits=n_splits)
+            metrics["is_mean"] = is_mean
+            metrics["is_std"] = is_std
+        else:
+            logger.warning(
+                f"Not enough synthetic samples ({len(all_syn)}) for IS ({n_splits} splits). Skipping IS."
+            )
+
     return metrics
