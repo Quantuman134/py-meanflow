@@ -28,8 +28,8 @@ def sample_two_timesteps_t_r_v0(args, num_samples: int, device: torch.device):
     t = logit_normal_timestep_sample(args.P_mean_t, args.P_std_t, num_samples, device=device)
     r = logit_normal_timestep_sample(args.P_mean_r, args.P_std_r, num_samples, device=device)
 
-    # step 2: ensure t >= r
-    t, r = torch.maximum(t, r), torch.minimum(t, r)
+    # step 2: ensure t <= r (t is the noisy query, r is the clean reference)
+    t, r = torch.minimum(t, r), torch.maximum(t, r)
 
     # step 3: make t and r different with a probability of args.ratio
     prob = torch.rand(num_samples, device=device)
@@ -42,7 +42,7 @@ def sample_two_timesteps_t_r_v0(args, num_samples: int, device: torch.device):
 def sample_two_timesteps_t_r_v1(args, num_samples: int, device: torch.device):
     """
     Sampler (t, r): independently sample t and r, with post-processing.
-    Version 1: different post-processing to ensure t >= r.
+    Version 1: different post-processing to ensure t <= r.
     """
     # step 1: sample two independent timesteps
     t = logit_normal_timestep_sample(args.P_mean_t, args.P_std_t, num_samples, device=device)
@@ -53,8 +53,8 @@ def sample_two_timesteps_t_r_v1(args, num_samples: int, device: torch.device):
     mask = prob < 1 - args.ratio
     r = torch.where(mask, t, r)
 
-    # step 3: ensure t >= r
-    r = torch.minimum(t, r)
+    # step 3: ensure t <= r (t is the noisy query, r is the clean reference)
+    t = torch.minimum(t, r)
 
     return t, r    
 

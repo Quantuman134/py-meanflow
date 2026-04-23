@@ -40,12 +40,12 @@ class MeanFlow(nn.Module):
         t, r = sample_two_timesteps(self.args, num_samples=x.shape[0], device=device)
         t, r = t.view(-1, 1, 1, 1), r.view(-1, 1, 1, 1)
 
-        z = (1 - t) * x + t * e
-        v = e - x
+        z = t * x + (1 - t) * e
+        v = x - e
 
         # define network function
         def u_func(z, t, r):
-            h = t - r
+            h = r - t
             return self.net(z, (t.view(-1), h.view(-1)), aug_cond)
 
         dtdt = torch.ones_like(t)
@@ -71,9 +71,9 @@ class MeanFlow(nn.Module):
         net = net if net is not None else self.net_ema                
 
         e = torch.randn(samples_shape, dtype=torch.float32, device=device)
-        z_1 = e
-        t = torch.ones(samples_shape[0], device=device)
-        r = torch.zeros(samples_shape[0], device=device)
-        u = net(z_1, (t, t - r), aug_cond=None)
-        z_0 = z_1 - u
-        return z_0
+        z_0 = e
+        t = torch.zeros(samples_shape[0], device=device)
+        r = torch.ones(samples_shape[0], device=device)
+        u = net(z_0, (t, r - t), aug_cond=None)
+        z_1 = z_0 + u
+        return z_1
