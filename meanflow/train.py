@@ -114,7 +114,8 @@ def main(args):
         log_writer = SummaryWriter(log_dir=args.output_dir)
         logger.info(f"Tensorboard writer created at {args.output_dir}")
         if args.use_wandb:
-            run_name = args.wandb_run_name or f"meanflow_{args.dataset}_b{args.batch_size}"
+            scale_tag = "_scale" if args.use_scale else ""
+            run_name = args.wandb_run_name or f"meanflow_{args.dataset}_b{args.batch_size}_{args.loss_weighting}{scale_tag}"
             wandb_utils.initialize(args, args.wandb_entity, args.wandb_project, run_name, args.wandb_key or None)
             logger.info(f"wandb run initialized: {run_name}")
     else:

@@ -73,6 +73,16 @@ def get_args_parser():
     parser.add_argument("--arch", default="unet", type=str, choices=["unet",], help="Architecture to use.")
     parser.add_argument("--use_edm_aug", action="store_true", dest="use_edm_aug", default=False, help="Enable EDM augmentation with augment labels as conditions.")
 
+    # Loss weighting parameters
+    parser.add_argument("--loss_weighting", default="none", type=str,
+                        help="Named loss weighting function (see models/loss_weighting.py).")
+    parser.add_argument("--use_scale", action="store_true",
+                        help="Apply the weighting's hard-coded scale * extra_scale to the loss.")
+    parser.add_argument("--extra_scale", default=1.0, type=float,
+                        help="Extra scale multiplier on top of the weighting's built-in scale.")
+    parser.add_argument("--weight_lambda", default=1.0, type=float,
+                        help="Lambda hyperparameter for vanilla_weighting and straight_weighting.")
+
     # Debugging settings
     parser.add_argument("--test_run", action="store_true", help="Only run one batch of training and evaluation.")
     parser.add_argument("--not_compile", action="store_false", dest="compile", default=True, help="Disable compilation.")

@@ -23,3 +23,9 @@ wandb_key: ""         # wandb API key, or set WANDB_KEY env var
 wandb_entity: ""      # wandb username or team, or set WANDB_ENTITY env var
 wandb_project: meanflow
 wandb_run_name: ""    # auto-generated as "meanflow_<dataset>_b<batch_size>" if empty
+
+# loss weighting
+loss_weighting: none   # weighting function name (see models/loss_weighting.py)
+use_scale: false       # apply weighting's built-in scale * extra_scale to the loss
+extra_scale: null      # extra multiplier on top of built-in scale; null means 1.0
+weight_lambda: 1.0    # lambda hyperparameter for vanilla_weighting / straight_weighting

@@ -13,6 +13,8 @@ with open(sys.argv[1]) as f:
 
 args = []
 for key, val in cfg.items():
+    if val is None:
+        continue  # let argparse use its default
     if isinstance(val, bool):
         if val:
             args.append(f"--{key}")

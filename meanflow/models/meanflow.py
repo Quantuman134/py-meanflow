@@ -4,6 +4,7 @@ import torch.nn as nn
 
 from models.time_sampler import sample_two_timesteps
 from models.ema import init_ema, update_ema_net
+from models.loss_weighting import get_weighting_fn
 
 
 class MeanFlow(nn.Module):
@@ -62,6 +63,15 @@ class MeanFlow(nn.Module):
             # adaptive weighting
             adp_wt = (loss.detach() + self.args.norm_eps) ** self.args.norm_p
             loss = loss / adp_wt
+
+            # custom weighting
+            weight_fn, scale = get_weighting_fn(self.args.loss_weighting)
+            loss = loss * weight_fn(t.view(-1), r.view(-1), self.args.weight_lambda)
+
+            # scale coefficient: weighting's hard-coded scale * config extra_scale
+            if self.args.use_scale:
+                extra_scale = self.args.extra_scale if self.args.extra_scale is not None else 1.0
+                loss = loss * scale * extra_scale
 
             loss = loss.mean()  # mean over batch dimension
         
