@@ -2,7 +2,7 @@
 set -e
 
 NGPU=8
-PORT=12345
+PORT=$(shuf -i 20000-65535 -n 1)
 CONFIG="../configs/cifar10_v1.yaml"
 
 TRAIN_ARGS=$(python3 - "$CONFIG" <<'PYEOF'
@@ -13,7 +13,7 @@ with open(sys.argv[1]) as f:
 
 args = []
 for key, val in cfg.items():
-    if val is None:
+    if val is None or val == "":
         continue  # let argparse use its default
     if isinstance(val, bool):
         if val:

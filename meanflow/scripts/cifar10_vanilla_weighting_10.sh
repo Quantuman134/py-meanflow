@@ -1,9 +1,13 @@
 #!/bin/bash
 set -e
 
+source /scratch/project/prj-02-visual-ai/hkzhang/miniconda3/etc/profile.d/conda.sh
+conda activate meanflow
+cd /scratch/project/prj-02-visual-ai/hkzhang/py-meanflow/meanflow
+
 NGPU=8
 PORT=$(shuf -i 20000-65535 -n 1)
-CONFIG="../configs/cifar10_v0.yaml"
+CONFIG="./configs/cifar10_vanilla_weighting_10.yaml"
 
 TRAIN_ARGS=$(python3 - "$CONFIG" <<'PYEOF'
 import sys, yaml
@@ -28,5 +32,4 @@ print(" ".join(args))
 PYEOF
 )
 
-cd "$(dirname "$0")/.."
 eval "torchrun --standalone --nproc_per_node=$NGPU --master_port=$PORT train.py $TRAIN_ARGS"

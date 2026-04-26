@@ -84,6 +84,7 @@ def get_data_loader(args, is_for_fid):
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
+        prefetch_factor=args.prefetch_factor if args.num_workers > 0 else None,
         drop_last=not is_for_fid,  # for FID evaluation, we want to keep all samples
     )
     logger.info(str(sampler))
@@ -148,8 +149,10 @@ def main(args):
     logger.info("job dir: {}".format(os.path.dirname(os.path.realpath(__file__))))
     logger.info("{}".format(args).replace(", ", ",\n"))
 
+    lam_tag = f"_lam{args.weight_lambda}" if args.loss_weighting != "none" else ""
     scale_tag = "_scale" if args.use_scale else ""
-    exp_name = args.wandb_run_name or f"meanflow_{args.dataset}_b{args.batch_size}_{args.loss_weighting}{scale_tag}"
+    extra_scale_tag = f"_x{args.extra_scale}" if args.use_scale and args.extra_scale not in (None, 1.0) else ""
+    exp_name = args.wandb_run_name or f"meanflow_{args.dataset}_b{args.batch_size}_{args.loss_weighting}{lam_tag}{scale_tag}{extra_scale_tag}"
     checkpoint_dir = Path(args.output_dir) / exp_name
 
     if distributed_mode.is_main_process():

@@ -25,7 +25,7 @@ wandb_project: 'MeanFlow'  # W&B project name (can also use env var PROJECT)
 wandb_run_name: ""    # auto-generated as "meanflow_<dataset>_b<batch_size>" if empty
 
 # loss weighting
-loss_weighting: none   # weighting function name (see models/loss_weighting.py)
+loss_weighting: vanilla_weighting   # weighting function name (see models/loss_weighting.py)
 use_scale: false       # apply weighting's built-in scale * extra_scale to the loss
 extra_scale: null      # extra multiplier on top of built-in scale; null means 1.0
 weight_lambda: 1.0    # lambda hyperparameter for vanilla_weighting / straight_weighting
